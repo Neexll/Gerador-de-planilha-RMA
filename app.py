@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 import tkinter as tk
@@ -8,6 +9,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+import openpyxl
 
 from excel_exporter import RmaEntry, export_to_excel, summarize_entries
 
@@ -129,8 +131,12 @@ class RmaApp(tk.Tk):
             row=1, column=4, sticky="w", padx=6, pady=4
         )
 
-        ttk.Button(meta, text="Exportar Excel", command=self._export_excel).grid(
+        ttk.Button(meta, text="Selecionar Planilha", command=self._import_excel).grid(
             row=1, column=5, sticky="e", padx=6, pady=4
+        )
+
+        ttk.Button(meta, text="Exportar Excel", command=self._export_excel).grid(
+            row=1, column=6, sticky="e", padx=6, pady=4
         )
 
         form = ttk.LabelFrame(left, text="Cadastro")
@@ -187,6 +193,9 @@ class RmaApp(tk.Tk):
         )
         ttk.Button(actions, text="Excluir selecionado", command=self._delete_selected).grid(
             row=0, column=3, padx=4, pady=4, sticky="w"
+        )
+        ttk.Button(actions, text="Colar Dados", command=self._paste_data).grid(
+            row=0, column=4, padx=4, pady=4, sticky="w"
         )
 
         table_frame = ttk.LabelFrame(left, text="Registros")
@@ -531,6 +540,120 @@ class RmaApp(tk.Tk):
                 os.startfile(str(path))  # type: ignore[attr-defined]
             except Exception:
                 pass
+
+
+    def _import_excel(self) -> None:
+        file_path = filedialog.askopenfilename(
+            title="Selecionar planilha existente",
+            filetypes=[("Excel", "*.xlsx")],
+        )
+        if not file_path:
+            return
+
+        try:
+            wb = openpyxl.load_workbook(file_path, data_only=True)
+        except Exception as e:
+            messagebox.showerror("Importar", f"Erro ao abrir o arquivo:\n{e}")
+            return
+
+        if "RMA" not in wb.sheetnames:
+            messagebox.showerror("Importar", "A planilha não contém a aba 'RMA'.")
+            wb.close()
+            return
+
+        ws = wb["RMA"]
+        imported_count = 0
+
+        for row_idx, row in enumerate(ws.iter_rows(min_row=3, values_only=True), start=3):
+            if not row or all(cell is None or str(cell).strip() == "" for cell in row):
+                continue
+
+            def safe(val: object) -> str:
+                return str(val).strip() if val is not None else ""
+
+            entry = RmaEntry(
+                recebimento=safe(row[0]) if len(row) > 0 else "",
+                cliente=safe(row[1]) if len(row) > 1 else "",
+                nf=safe(row[2]) if len(row) > 2 else "",
+                os=safe(row[3]) if len(row) > 3 else "",
+                triagem=safe(row[4]) if len(row) > 4 else "",
+                produto_enviado=safe(row[5]) if len(row) > 5 else "",
+                und=safe(row[6]) if len(row) > 6 else "",
+                plataforma=safe(row[7]) if len(row) > 7 else "",
+                codigo=safe(row[8]) if len(row) > 8 else "",
+                numero_serie=safe(row[9]) if len(row) > 9 else "",
+                status=safe(row[10]) if len(row) > 10 else "",
+                configuracao_avaria=safe(row[11]) if len(row) > 11 else "",
+                pedido_marketplace=safe(row[12]) if len(row) > 12 else "",
+                laudo_tecnico=safe(row[13]) if len(row) > 13 else "",
+            )
+
+            self.entry_counter += 1
+            iid = str(self.entry_counter)
+            self.entry_by_id[iid] = entry
+            if self.tree is not None:
+                self.tree.insert("", "end", iid=iid, values=self._entry_to_values(entry))
+            imported_count += 1
+
+        wb.close()
+        self._refresh_summaries()
+        messagebox.showinfo("Importar", f"{imported_count} registro(s) importado(s) com sucesso!")
+
+    def _paste_data(self) -> None:
+        try:
+            clipboard = self.clipboard_get()
+        except tk.TclError:
+            messagebox.showwarning("Colar Dados", "Área de transferência vazia ou sem texto.")
+            return
+
+        if not clipboard.strip():
+            messagebox.showwarning("Colar Dados", "Nenhum dado para colar.")
+            return
+
+        lines = clipboard.strip().split("\n")
+        imported_count = 0
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            parts = re.split(r"\t", line)
+            if len(parts) < 2:
+                parts = re.split(r"\s{2,}", line)
+
+            def safe(idx: int) -> str:
+                return parts[idx].strip() if idx < len(parts) else ""
+
+            entry = RmaEntry(
+                recebimento=safe(0),
+                cliente=safe(1),
+                nf=safe(2),
+                os=safe(3),
+                triagem=safe(4),
+                produto_enviado=safe(5),
+                und=safe(6),
+                plataforma=safe(7),
+                codigo=safe(8),
+                numero_serie=safe(9),
+                status=safe(10),
+                configuracao_avaria=safe(11),
+                pedido_marketplace=safe(12),
+                laudo_tecnico=safe(13),
+            )
+
+            self.entry_counter += 1
+            iid = str(self.entry_counter)
+            self.entry_by_id[iid] = entry
+            if self.tree is not None:
+                self.tree.insert("", "end", iid=iid, values=self._entry_to_values(entry))
+            imported_count += 1
+
+        self._refresh_summaries()
+        if imported_count > 0:
+            messagebox.showinfo("Colar Dados", f"{imported_count} registro(s) adicionado(s)!")
+        else:
+            messagebox.showwarning("Colar Dados", "Nenhum dado válido encontrado.")
 
 
 def main() -> None:

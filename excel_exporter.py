@@ -95,22 +95,25 @@ def export_to_excel(
             "bold": True,
             "align": "center",
             "valign": "vcenter",
-            "bg_color": "#D9D9D9",
+            "bg_color": "#4472C4",
+            "font_color": "#FFFFFF",
             "border": 1,
         }
     )
-    fmt_header_red = workbook.add_format(
+    fmt_header_laudo = workbook.add_format(
         {
             "bold": True,
             "align": "center",
             "valign": "vcenter",
-            "bg_color": "#FF0000",
-            "font_color": "#FFFFFF",
+            "bg_color": "#4472C4",
+            "font_color": "#FF0000",
             "border": 1,
         }
     )
     fmt_cell = workbook.add_format({"border": 1, "valign": "top"})
     fmt_cell_wrap = workbook.add_format({"border": 1, "valign": "top", "text_wrap": True})
+    fmt_status_reparo = workbook.add_format({"border": 1, "valign": "top", "bg_color": "#C6EFCE", "font_color": "#006100"})
+    fmt_status_reembolso = workbook.add_format({"border": 1, "valign": "top", "bg_color": "#FFC7CE", "font_color": "#9C0006"})
 
     ws = workbook.add_worksheet("RMA")
     ws.hide_gridlines(2)
@@ -119,7 +122,7 @@ def export_to_excel(
     ws.set_row(0, 24)
 
     for i, h in enumerate(headers):
-        ws.write(1, i, h, fmt_header_red if h == "LAUDO TÉCNICO" else fmt_header)
+        ws.write(1, i, h, fmt_header_laudo if h == "LAUDO TÉCNICO" else fmt_header)
 
     ws.freeze_panes(2, 0)
 
@@ -160,8 +163,17 @@ def export_to_excel(
             e.laudo_tecnico,
         ]
         for col_idx, v in enumerate(row_values):
-            use_wrap = col_idx in {11, 13}
-            ws.write(row_idx, col_idx, v, fmt_cell_wrap if use_wrap else fmt_cell)
+            if col_idx == 10:
+                status_lower = (v or "").lower().strip()
+                if "reparo" in status_lower:
+                    ws.write(row_idx, col_idx, v, fmt_status_reparo)
+                elif "reembolso" in status_lower:
+                    ws.write(row_idx, col_idx, v, fmt_status_reembolso)
+                else:
+                    ws.write(row_idx, col_idx, v, fmt_cell)
+            else:
+                use_wrap = col_idx in {11, 13}
+                ws.write(row_idx, col_idx, v, fmt_cell_wrap if use_wrap else fmt_cell)
 
     pieces_sorted, reasons_sorted = summarize_entries(entries)
 
